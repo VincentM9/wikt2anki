@@ -27,6 +27,7 @@ import anthropic
 import requests
 from anthropic import beta_tool
 
+import offline
 from make_deck import fetch_definitions, format_back, write_apkg, write_tsv
 
 # provider: (API key variable, default model)
@@ -54,6 +55,7 @@ asks you to."""
 cards = {}
 unsaved = False  # cards changed since the last save
 session = requests.Session()
+offline_db = None  # set by --offline: look words up locally instead
 
 
 @beta_tool
@@ -75,7 +77,10 @@ def lookup_words(words: list[str], lang: str = "en", max_defs: int = 3) -> str:
         if not word:
             continue
         try:
-            defs = fetch_definitions(word, lang, max_defs=max_defs, session=session)
+            if offline_db:
+                defs = offline.fetch_definitions(word, lang, max_defs, db_path=offline_db)
+            else:
+                defs = fetch_definitions(word, lang, max_defs=max_defs, session=session)
         except requests.RequestException as e:
             lines.append(f"{word}: error ({e})")
             print(f"  {word}: error", file=sys.stderr)
@@ -90,7 +95,8 @@ def lookup_words(words: list[str], lang: str = "en", max_defs: int = 3) -> str:
         else:
             lines.append(f"{word}: no '{lang}' entry found, not added")
             print(f"  {word}: not found", file=sys.stderr)
-        time.sleep(0.5)  # be polite to Wiktionary
+        if not offline_db:
+            time.sleep(0.5)  # be polite to Wiktionary
     lines.append(f"Deck now has {len(cards)} word(s).")
     return "\n".join(lines)
 
@@ -252,7 +258,10 @@ def check_key(api, client):
     try:
         client.models.list()
     except api.APIStatusError as e:
-        return f"That key was rejected (HTTP {e.status_code})"
+        detail = str(e.message)
+        if client.api_key:
+            detail = detail.replace(client.api_key, "[REDACTED]")
+        return f"API check failed (HTTP {e.status_code}): {detail}"
     except api.APIConnectionError:
         sys.exit("Couldn't reach the API. Check your internet connection.")
     return None
@@ -263,7 +272,16 @@ def main():
     p.add_argument("--provider", choices=PROVIDERS,
                    help="which AI to use (default: worked out from the API key)")
     p.add_argument("--model", help="model name (default depends on the provider)")
+    p.add_argument("--offline", nargs="?", const="wiktionary.db", metavar="DB",
+                   help="look words up in a database built by offline.py instead of online "
+                        "Wiktionary (default DB: wiktionary.db). The AI itself still needs internet.")
     args = p.parse_args()
+    if args.offline:
+        if not os.path.exists(args.offline):
+            p.error(f"{args.offline} not found. Build it first: "
+                    "python offline.py build <kaikki file> --lang ...")
+        global offline_db
+        offline_db = args.offline
 
     # A key already set in the environment skips the prompt.
     provider, key = args.provider, None

@@ -1,3 +1,6 @@
 /mediawiki-1.46.2
 /Unconfirmed 368425.crdownload
 /__pycache__
+*.jsonl
+*.jsonl.gz
+*.db

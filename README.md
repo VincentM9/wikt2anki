@@ -62,6 +62,7 @@ You can give words on the command line and `--file` together.
 | `--reverse` | off | Also make definition → word cards (`.apkg` only) |
 | `--delay` | `0.5` | Seconds to wait between requests |
 | `--wiki` | `en` | Which Wiktionary to query. Only `en` works at present (see [Limitations](#limitations)) |
+| `--offline [DB]` | off | Look words up in a local database instead of online (see [Offline mode](#offline-mode)). `DB` defaults to `wiktionary.db` |
 
 ### Learning other languages
 
@@ -135,6 +136,39 @@ Other things you can ask for:
 - **Changes to the list:** ask the AI to list what's in the deck so far, or to remove words.
 
 The AI can only save `.apkg` or `.tsv` files, and only in the folder you ran the script from. Each message you send costs a small amount of API usage. To leave, type `quit`. If you quit with unsaved changes, the script tells you.
+
+## Offline mode
+
+You can look words up without internet access, using a copy of Wiktionary from [kaikki.org](https://kaikki.org/). Kaikki publishes Wiktionary already converted to JSON.
+
+**1. Download the data.** Choose one:
+
+- **One language (recommended):** go to the language's page and download the `.jsonl.gz` file. For example, the [French page](https://kaikki.org/dictionary/French/) has a file of about 60 MB.
+- **Every language:** download `raw-wiktextract-data.jsonl.gz` (about 3 GB) from the [raw data page](https://kaikki.org/dictionary/rawdata.html).
+
+**2. Build the lookup database.** You only do this once:
+
+```sh
+python offline.py build raw-wiktextract-data.jsonl.gz --lang fr --lang en
+```
+
+This writes `wiktionary.db`, keeping only the languages you list. Reading the 3 GB file takes several minutes, and a single-language file is much quicker. If you leave out `--lang`, every language is included, which is much slower and makes a much bigger database. To add a language later, run the build again with only that `--lang`. Languages already in the database are kept.
+
+**3. Use `--offline`:**
+
+```sh
+python offline.py lookup pomme --lang fr                          # quick check
+python make_deck.py chat pomme maison --lang fr --offline
+python chat.py --offline                                          # the AI itself still needs internet
+```
+
+Offline cards are a little different from online ones:
+
+- **Examples:** foreign-language examples include their English translation, for example "manger une pomme — eat an apple".
+- **Capitalisation:** if a word isn't found as typed, the lookup tries other capitalisations, so `haus` finds `Haus`.
+- **Up to date:** the data is only as current as your download. Kaikki refreshes it about once a week.
+
+`wiktionary.db` and the downloaded file are large, so keep them out of git.
 
 ## Output
 

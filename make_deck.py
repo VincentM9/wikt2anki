@@ -5,6 +5,7 @@ Usage:
     python make_deck.py hello world serendipity -o words.apkg
     python make_deck.py -f words.txt --lang fr --deck "French vocab"
     python make_deck.py -f words.txt --tsv words.tsv     # plain-text import file instead
+    python make_deck.py -f words.txt --lang fr --offline # no internet; see offline.py
 
 Requires: pip install requests genanki   (genanki is only needed for .apkg output)
 """
@@ -12,12 +13,15 @@ Requires: pip install requests genanki   (genanki is only needed for .apkg outpu
 import argparse
 import hashlib
 import html
+import os
 import re
 import sys
 import time
 from urllib.parse import quote
 
 import requests
+
+import offline
 
 API = "https://{wiki}.wiktionary.org/api/rest_v1/page/definition/{word}"
 # Wikimedia asks for a descriptive User-Agent; requests without one may be blocked.
@@ -141,7 +145,13 @@ def main():
     p.add_argument("--no-examples", action="store_true", help="omit usage examples")
     p.add_argument("--reverse", action="store_true", help="also make definition -> word cards")
     p.add_argument("--delay", type=float, default=0.5, help="seconds between requests")
+    p.add_argument("--offline", nargs="?", const="wiktionary.db", metavar="DB",
+                   help="look words up in a database built by offline.py instead of online "
+                        "(default DB: wiktionary.db)")
     args = p.parse_args()
+    if args.offline and not os.path.exists(args.offline):
+        p.error(f"{args.offline} not found. Build it first: "
+                "python offline.py build <kaikki file> --lang ...")
 
     words = list(args.words)
     if args.file:
@@ -155,8 +165,12 @@ def main():
     cards, missing = [], []
     for i, word in enumerate(words, 1):
         try:
-            defs = fetch_definitions(word, args.lang, args.wiki, args.max_defs,
-                                     not args.no_examples, session)
+            if args.offline:
+                defs = offline.fetch_definitions(word, args.lang, args.max_defs,
+                                                 not args.no_examples, args.offline)
+            else:
+                defs = fetch_definitions(word, args.lang, args.wiki, args.max_defs,
+                                         not args.no_examples, session)
         except requests.RequestException as e:
             print(f"[{i}/{len(words)}] {word}: error ({e})", file=sys.stderr)
             missing.append(word)
@@ -168,7 +182,8 @@ def main():
         else:
             print(f"[{i}/{len(words)}] {word}: no '{args.lang}' entry found", file=sys.stderr)
             missing.append(word)
-        time.sleep(args.delay)
+        if not args.offline:
+            time.sleep(args.delay)
 
     if not cards:
         sys.exit("No cards made.")
